@@ -357,6 +357,12 @@ pub fn page_text(mut found: Vec<(f64, f64, String)>, cap: usize) -> Vec<String> 
     out
 }
 
+/// Lines in order until they come to `cap` characters in all (a page can be endless).
+pub fn cap_lines(lines: Vec<String>, cap: usize) -> Vec<String> {
+    let mut total = 0;
+    lines.into_iter().take_while(|l| { total += l.chars().count() + 1; total <= cap }).collect()
+}
+
 /// Text scrolled out of view, top to bottom. When it's long, the start and the end are kept, with a note between.
 pub fn offscreen_text(mut found: Vec<(f64, String)>, cap: usize) -> Vec<String> {
     found.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -800,6 +806,7 @@ pub fn self_test() -> Vec<(&'static str, bool)> {
         ("an OCR phrase spans its words", ocr_matches(&line, "open now") == vec![Rect::new(150.0, 0.0, 80.0, 12.0)]),
         ("one character is cut from its word, case and all", ocr_matches(&line, "O") == vec![Rect::new(150.0, 0.0, 10.0, 12.0)]),
         ("the item below the anchor wins", nearest_after(&Rect::new(0.0, 100.0, 50.0, 10.0), &[Rect::new(0.0, 50.0, 20.0, 10.0), Rect::new(0.0, 130.0, 20.0, 10.0), Rect::new(0.0, 300.0, 20.0, 10.0)]) == Some(1)),
+        ("a whole page of text is kept in order up to the cap", cap_lines(vec!["one".into(), "two".into(), "three".into()], 8) == vec!["one".to_string(), "two".to_string()] && cap_lines(vec!["one".into()], 600_000).len() == 1 && cap_lines(vec![], 10).is_empty()),
         ("long scrolled-off text keeps its start and end", offscreen_text((0..50).map(|i| (i as f64, format!("line number {i}"))).collect(), 100).last().map(String::as_str) == Some("line number 49")),
     ]
 }

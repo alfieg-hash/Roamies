@@ -173,6 +173,13 @@ fn windows_main(cmd: &str, args: &[String]) -> ! {
             let note = if items.is_empty() { "This app shares no controls. Use a screenshot plus click at coordinates instead." } else { "" };
             out(json!({ "ok": true, "window": win_info(&w), "controls": items, "texts": logic::page_text(on, 5000), "elsewhere": logic::offscreen_text(off, 4000), "note": note }))
         }
+        // text <target>: all the text in the window, in the page's own order and uncut (ui caps it for reading), so a
+        // long page such as a video's transcript can be saved whole.
+        "text" => {
+            let Some(w) = arg(1).and_then(resolve) else { fail("No matching window is open.") };
+            let lines = logic::cap_lines(uia::Tree::of_window_deep(&w).all_text(), 600_000);
+            out(json!({ "ok": true, "window": win_info(&w), "lines": lines }))
+        }
         "locate-control" => {
             let (Some(w), Some(id)) = (arg(1).and_then(resolve), arg(2).and_then(|s| s.parse::<usize>().ok())) else { fail("usage: locate-control <target> <id>") };
             let items = uia::Tree::of_window(&w).walk(w.r, 260);

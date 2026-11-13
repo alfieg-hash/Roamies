@@ -35,6 +35,7 @@ voice, keeps track of what you said you'd do and nudges you when it's due.
 - **It remembers.** What you said you'd do, reminders down to the second (or on repeat: "every weekday at 9", "every 2 hours"), and what matters to you.
 - **It draws on your screen.** Rings the exact button to click, walks you through each step, and sketches answers beside what you're reading.
 - **It keeps widgets on your desktop.** Ask for a clock, a timer, a countdown to a date, a sticky note, a to-do list, your reminders or the weather, and it stays on screen (after restarts too) until you close it. Drag them where you like, and keep them on top of everything or behind your other windows (the button beside each widget's x, or just ask).
+- **It writes down videos.** With a YouTube video open, ask for its transcript and it saves what was said to a text file and opens it in Notepad (macOS and Windows; the full length on Windows).
 - **It does the clicking.** Opens apps, sites and files, and on macOS and Windows clicks or types in other apps for you.
 - **Your subscriptions.** Sign in with Claude or ChatGPT, or use an API key (Gemini, Grok, Kimi Code and more).
 

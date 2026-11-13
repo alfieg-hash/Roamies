@@ -13,6 +13,7 @@ import { CARDS, DrawArgs, LIMITS, checkDraw, createParts, createPhotos, describe
 import { plain } from './intro.mjs';
 import { linuxSession, seesPointer } from './platform.mjs';
 import { addCommitment, forgetFact, parseDue, parseRepeat, repeatLabel, updateCommitment } from './store.mjs';
+import { extractTranscript, formatTranscript, safeFileName, videoTitle } from './transcript.mjs';
 import { WidgetArgs, LIMITS as WIDGET_LIMITS } from './widgets.mjs';
 
 const HOME = os.homedir();
@@ -709,6 +710,44 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, sho
         description: "List the buttons, links, fields, checkboxes and other controls in an app's front window (id, role, label, value), plus the text on screen and the text scrolled out of view above and below it, so you can read a whole page without scrolling or a screenshot. Needed before act_in_app steps that use ids. To mark or click something by its visible words you don't need this: use draw or click_text with text. target: 'front', an app name, or 'browser'.",
         parameters: z.object({ target: z.string().optional() }),
         execute: async ({ target = 'front' }) => readWindow(target),
+      },
+      // A video's transcript, from the panel the user's own browser shows (transcript.mjs): read whole by the helper,
+      // written to a new file and opened, so a long one isn't retyped through the model.
+      {
+        name: 'save_transcript',
+        description: `Save the transcript of the YouTube video open in ${userName}'s browser to a text file and open it in Notepad (TextEdit on a Mac): what is said in the video, word for word, without you retyping it. Use it when they ask for a video's transcript, captions, text or words to be written down, saved, or put in Notepad. The video's transcript panel must be showing first: act_in_app on target "browser" with click_text "...more" (under the video, opens the description) then click_text "Show transcript". A video with no "Show transcript" button has no captions: say so. Then call this. timestamps true keeps the time before each line. The result says where the file is and how long it is; to answer questions about the video afterwards, read_file that file.`,
+        parameters: z.object({ timestamps: z.boolean().optional(), target: z.string().optional() }),
+        executionMode: 'sequential',
+        execute: async ({ timestamps = false, target = 'browser' }) => {
+          if (!allowActions()) throw new Error(actionsOff);
+          const spec = !target || target === 'front' ? 'front' : `app:${target}`;
+          // The page's whole text in its own order (hands `text`). A helper without it (macOS) gives what read_window
+          // reads, which is capped: enough for a short video only.
+          let partial = false;
+          const res = await hands('text', spec).catch(async (err) => {
+            if (/No matching window/i.test(String(err?.message ?? err))) throw err;
+            partial = true;
+            const r = await hands('ui', spec);
+            return { window: r.window, lines: [...(r.texts ?? []), ...(r.elsewhere ?? [])] };
+          });
+          const segments = extractTranscript(res.lines);
+          if (!segments.length) throw new Error(`No transcript is showing in ${res.window?.app ?? 'the browser'}${res.window?.title ? ` (${res.window.title})` : ''}. Open it first: act_in_app on target "browser" with click_text "...more" (the description under the video), then click_text "Show transcript", then call save_transcript again. If there is no "Show transcript" button, this video has no captions.`);
+          const title = videoTitle(res.window?.title), dir = path.join(HOME, 'Documents', 'Roamies transcripts');
+          // Always a new file: an earlier transcript of the same video is never written over.
+          let file;
+          for (let n = 1; ; n++) {
+            file = path.join(dir, `${safeFileName(title)}${n > 1 ? ` (${n})` : ''}.txt`);
+            if (!(await fs.stat(file).then(() => true, () => false))) break;
+          }
+          const f = allowed(checkWrite(file, HOME, { exists: false }));
+          const text = formatTranscript(segments, { timestamps });
+          await fs.mkdir(path.dirname(f), { recursive: true });
+          await fs.writeFile(f, `${title}\n${'='.repeat(Math.min(title.length, 60))}\n\n${text}\n`);
+          const app = process.platform === 'win32' ? 'Notepad' : process.platform === 'darwin' ? 'TextEdit' : undefined;
+          const opened = await tools.find((x) => x.name === 'open').execute({ target: f, app }).then(() => '', (e) => String(e?.message ?? e));
+          const words = text.split(/\s+/).filter(Boolean).length;
+          return `Saved the transcript of "${title}" (${segments.length} lines, about ${words} words, up to ${segments.at(-1).at}) to ${f}${opened ? `, but couldn't open it (${opened})` : ` and opened it${app ? ` in ${app}` : ''}`}.${partial ? ' Only part of a long page can be read on this computer, so a long video may be cut short: say so.' : ''}`;
+        },
       },
       {
         name: 'act_in_app',

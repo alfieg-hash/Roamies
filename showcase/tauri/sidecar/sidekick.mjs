@@ -443,6 +443,7 @@ function anim(name, args = {}) {
     case 'remember_commitment': return { tool: 'write', variant: 'create', label: 'saving', detail: 'a reminder' };
     case 'forget_fact': return { tool: 'write', variant: 'crumble', label: 'forgetting', detail: 'that' };
     case 'update_commitment': return { tool: 'write', variant: 'edit', label: 'updating', detail: 'a reminder' };
+    case 'save_transcript': return { tool: 'write', variant: 'create', label: 'writing down', detail: 'the transcript' };
     case 'widget': return args.do === 'layer' ? { tool: 'write', variant: 'edit', label: 'moving', detail: 'the widgets' } : args.do === 'remove' ? { tool: 'write', variant: 'crumble', label: 'removing', detail: 'a widget' } : { tool: 'write', variant: args.do === 'change' ? 'edit' : 'create', label: args.do === 'change' ? 'updating' : 'making', detail: `a ${args.kind && args.do === 'add' ? `${args.kind} ` : ''}widget` };
     case 'open': {
       const t = String(args.target ?? '');

@@ -246,6 +246,19 @@ impl Tree {
         }
     }
 
+    /// The whole window however long its page is: a video's full transcript runs to thousands of lines.
+    pub fn of_window_deep(w: &Win) -> Tree {
+        match unsafe { uia().a.ElementFromHandle(hwnd(w.id)) } {
+            Ok(root) => Tree::read(&root, 80000),
+            Err(_) => Tree::empty(),
+        }
+    }
+
+    /// Every piece of text in the window, in the page's own order, on screen or scrolled out of view.
+    pub fn all_text(&self) -> Vec<String> {
+        self.nodes.iter().filter(|n| n.ct == CT_TEXT).map(|n| n.name.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty()).collect()
+    }
+
     /// A field with no label of its own: the text just before it in its row.
     fn nearby_label(&self, i: usize) -> Option<String> {
         let mut cur = i;
