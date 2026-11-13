@@ -445,6 +445,21 @@ export function checkUrl(url) {
   return verdict(SAFE);
 }
 
+/** A live widget's address: fetched again and again with nobody watching, so on top of fetch_url's rules it must be
+ *  https (nothing readable or changeable on the way), on the usual port, and carry no key or token in its query (the
+ *  address is kept in widgets.json and sent on every refresh). */
+const SECRET_PARAM = /^(api[-_]?key|key|token|access[-_]?token|auth|authorization|secret|password|passwd|pwd|sig|signature|session|sid)$/i;
+export function checkWidgetUrl(url) {
+  const v = checkUrl(url);
+  if (v.level !== SAFE) return v;
+  const u = new URL(String(url));
+  if (u.protocol !== 'https:') return verdict(BLOCK, 'A widget only keeps watching https addresses.');
+  if (u.port && u.port !== '443') return verdict(BLOCK, 'A widget only watches addresses on the usual https port.');
+  if (String(url).length > 600) return verdict(BLOCK, 'That address is too long for a widget.');
+  for (const k of u.searchParams.keys()) if (SECRET_PARAM.test(k)) return verdict(BLOCK, `That address has a key or token in it (${k}), so a widget won't keep it.`);
+  return verdict(SAFE);
+}
+
 /** A link the user clicked in a reply: opened in their browser, so web and mail links only (no file:, apps or scripts). */
 export function checkLink(url) {
   let u;

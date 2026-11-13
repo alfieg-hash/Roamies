@@ -9,6 +9,8 @@
   const typing = (on) => invoke('set_typing', { on }).catch(() => {});
   // Drawings (ink.js) talk to the sidecar (started, waits done, buttons, closed cards) and arm the shell's click watch.
   if (Roamie.ink) { Roamie.ink.send = send; Roamie.ink.invoke = (cmd, args) => invoke(cmd, args).catch(() => {}); }
+  // Widgets on the desktop (widgets.js) tell the sidecar when one is dragged, closed, ticked or its buttons pressed.
+  if (Roamie.widgets) Roamie.widgets.send = send;
   window.__roamieClick = (x, y) => Roamie.ink?.click(x, y);
 
   window.__roamieSafe = (s) => Roamie.setSafe?.(s);
@@ -49,6 +51,7 @@
       for (const r of Roamie.inkRects?.() ?? []) grown(r);
       const card = Roamie.panelRect?.();
       if (card) grown(card);
+      for (const r of Roamie.widgetRects?.() ?? []) grown(r);
       const bar = Roamie.askBarRect?.();
       if (bar) grown(bar);
       // Sampled a little past the canvas: hit areas can reach beyond what's drawn.
@@ -428,6 +431,8 @@
       return;
     }
     if (!getAgent()) return;
+    // Widgets live on the Sidekick's overlay only, and stay up whether or not it is out.
+    if (m.kind === 'widgets') { Roamie.widgets?.set(m.list); return; }
     if (m.kind === 'hands') {
       // on/off: it is acting in another app. In between: where each step lands (global screen points) and when a
       // step takes the real cursor; the Sidekick hops there in its cursor form instead of chasing the cursor.

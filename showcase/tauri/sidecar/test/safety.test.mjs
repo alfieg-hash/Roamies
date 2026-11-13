@@ -1,6 +1,6 @@
 // The safety rules: what runs on its own, what needs a yes, what never runs. Run: npm test
 import assert from 'node:assert/strict';
-import { ASK, BLOCK, SAFE, checkDrawAction, checkLink, checkOpen, checkRead, checkUrl, checkWrite, classifyCommand, isPrivateAddress, isYes, splitCommand } from '../safety.mjs';
+import { ASK, BLOCK, SAFE, checkDrawAction, checkLink, checkOpen, checkRead, checkUrl, checkWidgetUrl, checkWrite, classifyCommand, isPrivateAddress, isYes, splitCommand } from '../safety.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
@@ -98,6 +98,18 @@ cases('url', checkUrl, [
   ['http://localhost:3000', BLOCK], ['http://127.0.0.1/admin', BLOCK], ['http://192.168.1.1', BLOCK], ['http://10.0.0.5', BLOCK],
   ['http://172.16.0.1', BLOCK], ['http://169.254.169.254/latest/meta-data', BLOCK], ['http://[::1]/', BLOCK], ['http://printer.local', BLOCK],
   ['file:///etc/passwd', BLOCK], ['ftp://x.com/a', BLOCK], ['https://user:pass@x.com', BLOCK], ['not a url', BLOCK],
+]);
+
+// A live widget's address is fetched again and again with nobody watching: fetch_url's rules, and also https only,
+// the usual port, and no key or token kept in it.
+cases('widget url', checkWidgetUrl, [
+  ['https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.13&current=temperature_2m', SAFE], ['https://example.com/prices.json', SAFE],
+  ['https://example.com:443/a', SAFE], ['https://example.com/a?keyword=tea&q=1', SAFE],
+  ['http://example.com/prices.json', BLOCK], ['https://example.com:8443/a', BLOCK], ['https://localhost/a', BLOCK], ['https://192.168.1.1/status', BLOCK],
+  ['https://169.254.169.254/latest/meta-data', BLOCK], ['https://[::1]/', BLOCK], ['https://printer.local/', BLOCK], ['https://user:pass@example.com/a', BLOCK],
+  ['https://example.com/a?api_key=abc123', BLOCK], ['https://example.com/a?apikey=abc123', BLOCK], ['https://example.com/a?x=1&token=abc', BLOCK],
+  ['https://example.com/a?access_token=abc', BLOCK], ['https://example.com/a?KEY=abc', BLOCK], ['https://example.com/a?password=hunter2', BLOCK],
+  [`https://example.com/${'a'.repeat(700)}`, BLOCK], ['file:///etc/passwd', BLOCK], ['javascript:alert(1)', BLOCK], ['not a url', BLOCK],
 ]);
 
 assert.equal(failures.length, 0, `\n${failures.join('\n')}`);

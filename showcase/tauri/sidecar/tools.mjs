@@ -13,6 +13,7 @@ import { CARDS, DrawArgs, LIMITS, checkDraw, createParts, createPhotos, describe
 import { plain } from './intro.mjs';
 import { linuxSession, seesPointer } from './platform.mjs';
 import { addCommitment, forgetFact, parseDue, parseRepeat, repeatLabel, updateCommitment } from './store.mjs';
+import { WidgetArgs, LIMITS as WIDGET_LIMITS } from './widgets.mjs';
 
 const HOME = os.homedir();
 export const expand = (p) => path.resolve(String(p).replace(/^~(?=$|\/|\\)/, HOME));
@@ -211,7 +212,7 @@ export const copyText = (text, askShell) => (LINUX ? askShell({ type: 'clipboard
 }));
 
 // askShell: Linux asks the app itself for screenshots and copying ({type:'screenshot'|'clipboard', …} → its answer).
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }) }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, widgets = null, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }) }) {
   let axNudged = 0;
   let lastShot = null; // how the latest screenshot's pixels map to screen points (see pointing.mjs)
   let lastRead = null; // { win, controls } from the latest read_window, to catch ids that went stale
@@ -992,6 +993,17 @@ A drawing stays until the user clears it or the window changes; your next drawin
       parameters: z.object({}),
       execute: async () => { showList(); return 'The list is on screen.'; },
     },
+    // Widgets that stay on the desktop (widgets.mjs). Only there when the app keeps them (not in the tests' bare set).
+    ...(widgets ? [{
+      name: 'widget',
+      description: `Put a small widget on ${userName}'s desktop that stays there (after restarts too) until removed; they can drag it by its top bar and close it with its x. Use it when they ask for a widget, or for something to keep, pin or leave on screen; draw is for explaining something now and goes away. To pin a card you drew, add a widget with the same content.
+do: add (kind + its fields), change (id + only the fields that change), remove (id, or id "all"). Ids (w1, w2 …) are in the result and in <live-state>.
+kind: clock (zone: an IANA name like Asia/Tokyo for another place's time; none = local time); timer (seconds; it starts at once and says when it's done); stopwatch; note (text and/or items as bullets); todo (items they tick off by clicking; done: the item numbers that are ticked, from 1); reminders (their live Today and Later list; only one); table (columns, rows; cells of exactly "yes" or "no" show as a tick or a cross); bars (bars [{label, value}], unit); timeline (events [{when, text}]); live (values read from the web again and again).
+live: url (https, public, no keys or tokens in it), fields [{label, path, unit}] up to ${WIDGET_LIMITS.fields}, every (minutes between reads, ${WIDGET_LIMITS.minEvery} or more, default 15). For a JSON address path is the dotted way to the value ("current.temperature_2m", "bitcoin.usd", "items.0.price"); for a web page give after (the words just before the value) instead of path. Weather needs no key: https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.13&current=temperature_2m,wind_speed_10m with path "current.temperature_2m", unit "°C" (use the place's own latitude and longitude). It is read once now, and the result says what it shows, so fix a wrong path right away.
+Timers and stopwatches: run start, pause or reset (they also have buttons). title: a few words on its top bar. tone: accent, teal, amber, coral, lilac, sky, lime, red, white. Up to ${WIDGET_LIMITS.widgets} widgets.`,
+      parameters: WidgetArgs, executionMode: 'sequential',
+      execute: async (args) => widgets.run(args),
+    }] : []),
     {
       name: 'list_commitments', description: "List the open commitments you're keeping track of.",
       parameters: z.object({}),

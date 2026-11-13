@@ -32,6 +32,9 @@ key) receives:
 **Websites** that you or the agent open or fetch (for example with its `fetch_url` tool) receive the usual
 request a browser would send.
 
+**Live widgets** (a weather or price widget you asked for) read their one web address again every few minutes
+while Roamies is open, until you remove the widget. The address is kept in `widgets.json` with your other widgets.
+
 Each provider's own privacy policy applies to what is sent to it.
 
 ## Speech, microphone and screen
@@ -56,6 +59,7 @@ Everything lives in `~/.gg` (on Windows, `%USERPROFILE%\.gg`) and stays on your 
 | ------------------------ | ----------------------------------------------------------------------------------- |
 | `sidekick.json`          | your settings                                                                       |
 | `sidekick/memory.json`   | facts Roamies learned and your commitments                                          |
+| `sidekick/widgets.json`  | the widgets on your desktop: what each shows and where you put it                   |
 | `sidekick/sessions/`     | conversations (the newest 60 are kept)                                              |
 | `sidekick/logs/`         | activity logs: tool names, timings, errors and short snippets of tool results (such as a line of window or page text); text you type into apps or files is reduced to its length; kept 7 days |
 | `sidekick/usage.jsonl`   | token counts and timings only, never content                                       |

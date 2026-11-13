@@ -39,6 +39,9 @@ stopping the release; `latest.json` lists Linux only when its AppImage is there.
   (tested in `test/safety.test.mjs`); the hands helpers also refuse to type or click in the apps in `HANDS_OFF`
   (by bundle id in `hands/main.swift`, by program name in `hands-win/src/logic.rs`).
   Add a test case with every rule change.
+- Widgets (`sidecar/widgets.mjs`, drawn by `showcase/roamies/widgets.js`) are data, never code or HTML from the model:
+  the page writes text with `textContent` only, and a live widget's address passes `checkWidgetUrl` when it is made
+  and on every refresh (https, public, no keys in it).
 - In-app updates read `latest.json` from the newest published release, signed with the key in the
   `TAURI_SIGNING_PRIVATE_KEY` secret. Keep `plugins.updater.pubkey` in `tauri.conf.json` matching it.
   When GitHub's release links fail, the updater falls back to the copy on the `updates` branch, which

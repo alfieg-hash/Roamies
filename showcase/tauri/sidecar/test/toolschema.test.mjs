@@ -42,6 +42,20 @@ assert.ok(!/"(oneOf|anyOf|allOf)"/.test(drawSchema), 'draw is one flat object sc
   assert.ok(d.description.includes('At most 4 cards show at once (one more closes the oldest)'), 'the model knows only a few cards stay up');
   assert.ok(d.description.length < 9000, `the draw description stays a readable size (${d.description.length})`);
 }
+// The widget tool is there when the app keeps widgets, as one flat schema every provider takes, and it runs through them.
+{
+  const calls = [];
+  const withWidgets = createTools({ allowActions: false, ui: () => {}, ask: async () => false, openUrl: noop, onCommitments: noop, showList: noop, fmtWhen: String, commitmentsText: () => '', userName: 'Test', widgets: { run: async (a) => { calls.push(a); return 'Made w1 (clock).'; } } }).tools;
+  const w = withWidgets.find((t) => t.name === 'widget');
+  assert.ok(w && !tools.some((t) => t.name === 'widget'), 'widget is a tool only when widgets are kept');
+  const schema = resolveToolSchema(w), text = JSON.stringify(schema);
+  assert.ok(!/"(oneOf|anyOf|allOf|format)"/.test(text), 'widget is one flat object schema with no string formats');
+  for (const k of ['clock', 'timer', 'stopwatch', 'note', 'todo', 'reminders', 'table', 'bars', 'timeline', 'live']) assert.ok(schema.properties.kind.enum.includes(k), `${k} is a kind of widget`);
+  assert.deepEqual(schema.required, ['do'], 'only do is always needed');
+  assert.equal(await w.execute({ do: 'add', kind: 'clock' }), 'Made w1 (clock).');
+  assert.deepEqual(calls, [{ do: 'add', kind: 'clock' }]);
+  assert.ok(w.description.length < 2600, `the widget description stays a readable size (${w.description.length})`);
+}
 console.log('tool schema ok');
 
 // act_in_app that only types a web address into a browser's bar becomes a direct open.
