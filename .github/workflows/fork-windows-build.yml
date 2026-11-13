@@ -1,7 +1,8 @@
 name: Windows test build
 
-# For a fork: builds an unsigned Windows installer of this branch and keeps it as a download on the run's page
-# (Actions → this run → Artifacts). No release is made and no signing keys are needed. Not for the main project:
+# For a fork: builds an unsigned Windows installer of this branch, keeps it on the run's page (Actions → this run →
+# Artifacts) and puts it on the fork's "widgets-test" pre-release, so it has one direct download link:
+# releases/download/widgets-test/Roamies-widgets-setup.exe. No signing keys are needed. Not for the main project:
 # leave this file out of pull requests to it.
 on:
   push:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # to attach the installer to the fork's test pre-release
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -69,3 +70,15 @@ jobs:
           path: showcase/tauri/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 14
+
+      # One direct link to the newest build. A pre-release, so it is never the fork's "latest" release.
+      - name: Put the installer on the test pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EXE=$(ls src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe | head -1)
+          cp "$EXE" Roamies-widgets-setup.exe
+          gh release view widgets-test >/dev/null 2>&1 || gh release create widgets-test --prerelease --target "$GITHUB_SHA" \
+            --title "Roamies with widgets (test build)" \
+            --notes "An unsigned test build of the desktop-widgets branch of this fork. Not an official Roamies release."
+          gh release upload widgets-test Roamies-widgets-setup.exe --clobber
