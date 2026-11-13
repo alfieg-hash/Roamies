@@ -358,7 +358,7 @@ const userName = (() => {
 let turnVoice = null;
 // Widgets kept on the desktop (widgets.mjs): the overlay is told after every change; a timer running out is said.
 const widgets = createWidgets({
-  onChange: (list) => ui({ kind: 'widgets', list }),
+  onChange: (list, layer) => ui({ kind: 'widgets', list, layer }),
   onTimer: (w) => { ui({ kind: 'agent', e: { type: 'emote', action: 'remind' } }); say(w.kind === 'countdown' ? `${w.title || 'Your countdown'}: it's time!` : `Time's up${w.title ? `: ${w.title}` : ''}.`, 'happy'); },
   reminders: () => listForUi(),
 });
@@ -443,7 +443,7 @@ function anim(name, args = {}) {
     case 'remember_commitment': return { tool: 'write', variant: 'create', label: 'saving', detail: 'a reminder' };
     case 'forget_fact': return { tool: 'write', variant: 'crumble', label: 'forgetting', detail: 'that' };
     case 'update_commitment': return { tool: 'write', variant: 'edit', label: 'updating', detail: 'a reminder' };
-    case 'widget': return args.do === 'remove' ? { tool: 'write', variant: 'crumble', label: 'removing', detail: 'a widget' } : { tool: 'write', variant: args.do === 'change' ? 'edit' : 'create', label: args.do === 'change' ? 'updating' : 'making', detail: `a ${args.kind && args.do === 'add' ? `${args.kind} ` : ''}widget` };
+    case 'widget': return args.do === 'layer' ? { tool: 'write', variant: 'edit', label: 'moving', detail: 'the widgets' } : args.do === 'remove' ? { tool: 'write', variant: 'crumble', label: 'removing', detail: 'a widget' } : { tool: 'write', variant: args.do === 'change' ? 'edit' : 'create', label: args.do === 'change' ? 'updating' : 'making', detail: `a ${args.kind && args.do === 'add' ? `${args.kind} ` : ''}widget` };
     case 'open': {
       const t = String(args.target ?? '');
       if (/^https?:\/\//i.test(t)) return { tool: 'web', variant: 'fetch', label: 'opening', detail: host(t) };
@@ -2048,6 +2048,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   else if (m.type === 'widget_close') widgets.close(String(m.id));
   else if (m.type === 'widget_tick') widgets.tick(String(m.id), m.i | 0);
   else if (m.type === 'widget_act') widgets.act(String(m.id), String(m.act));
+  else if (m.type === 'widget_layer') widgets.setLayer(String(m.layer)); // the button beside a widget's x
+  else if (m.type === 'widgets_ready') widgets.sync(true); // the back window's page has loaded
   // The overlay's drawing: a segment started, a wait for a click or hover ended, a card was closed, a button clicked.
   else if (m.type === 'draw_started') { ink.started(String(m.id), m.seg | 0); if (String(m.id) === showcase?.id) ob({ kind: 'showcase', phase: 'beat', beat: m.seg | 0 }); }
   else if (m.type === 'draw_done') { if (String(m.id) === showcase?.id) showcaseDrawn(); }

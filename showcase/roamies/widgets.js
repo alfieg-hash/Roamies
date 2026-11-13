@@ -3,7 +3,9 @@
 // sends the whole list after every change; this page only shows it. Each is real type in the research card's look
 // (pixel frame, Martian Mono), dragged by its top bar and closed with its x. Model text goes in as textContent only.
 // The overlay is click-through, so the host asks Roamie.widgetHit(x, y) whether the cursor is over one.
-// API: Roamie.widgets.set(list) .send (set by host.js) .count; Roamie.widgetHit(x, y); Roamie.widgetRects()
+// They sit on the overlay (in front of everything) or, kept "behind", in the shell's back window (widgets.html,
+// widgets-host.js): the same code draws them in both, and the button beside the x moves them all between the two.
+// API: Roamie.widgets.set(list, layer, canLayer) .send (set by host.js) .count; Roamie.widgetHit(x, y); Roamie.widgetRects()
 (() => {
   const R = window.Roamie;
   if (!R || typeof document === 'undefined') return;
@@ -32,6 +34,7 @@
 .rw-count { font-size: 10px; color: var(--ink-3); flex: none; }
 .rw-x { all: unset; width: 24px; height: 22px; display: grid; place-items: center; color: var(--ink-3); cursor: pointer; flex: none; }
 .rw-x:hover { color: var(--ink); background: #0d2a2a; }
+.rw-layer[hidden] { display: none; }
 .rw-body { padding: 10px 14px 12px; overflow-wrap: anywhere; }
 .rw-big { font: 600 30px/1.15 "Martian Mono", ui-monospace, monospace; letter-spacing: -.01em; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rw-big small { font-size: 13px; font-weight: 500; letter-spacing: .02em; margin-left: 6px; color: var(--ink-2); }
@@ -90,7 +93,8 @@
   const send = (msg) => api.send?.(msg);
 
   const cards = new Map(); // id → { el, w, key, tick }
-  let drag = null, ticker = 0;
+  let drag = null, ticker = 0, layer = 'front';
+  const svgEl = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
 
   // ---------- what each kind shows ----------
   const fmtTime = (zone) => { try { return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: zone }); } catch { return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' }); } };
@@ -235,13 +239,19 @@
     svg.setAttribute('width', '10'); svg.setAttribute('height', '10'); svg.setAttribute('viewBox', '0 0 10 10'); svg.setAttribute('aria-hidden', 'true');
     path.setAttribute('d', 'M1 1l8 8M9 1L1 9'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '2'); path.setAttribute('stroke-linecap', 'square');
     svg.append(path); x.append(svg);
-    head.append(mk('span', 'rw-dot'), title, count, x);
+    // Two stacked sheets: sends every widget behind other windows, or brings them back in front.
+    const lay = mk('button', 'rw-x rw-layer'); lay.type = 'button'; lay.hidden = true;
+    const ls = svgEl('svg', { width: '12', height: '12', viewBox: '0 0 12 12', 'aria-hidden': 'true' });
+    const backSheet = svgEl('rect', { x: '1', y: '1', width: '7', height: '7', stroke: 'currentColor', 'stroke-width': '1.5' }), frontSheet = svgEl('rect', { x: '4', y: '4', width: '7', height: '7', stroke: 'currentColor', 'stroke-width': '1.5' });
+    ls.append(backSheet, frontSheet); lay.append(ls);
+    lay.addEventListener('click', () => send({ type: 'widget_layer', layer: layer === 'back' ? 'front' : 'back' }));
+    head.append(mk('span', 'rw-dot'), title, count, lay, x);
     inner.append(head, body); el.append(inner);
-    const c = { el, w, body, title, count, key: '', tick: null, placed: false, x: 0, y: 0 };
+    const c = { el, w, body, title, count, lay, sheets: [backSheet, frontSheet], key: '', tick: null, placed: false, x: 0, y: 0 };
     x.addEventListener('click', () => { R.sfx?.play('poof'); send({ type: 'widget_close', id: c.w.id }); remove(c); cards.delete(c.w.id); });
     // Dragged by the top bar; where it is left is kept (the sidecar saves it).
     head.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target.closest('.rw-x')) return;
+      if (e.button !== 0 || e.target.closest('.rw-x')) return; // either head button
       const r = el.getBoundingClientRect();
       drag = { c, dx: e.clientX - r.left, dy: e.clientY - r.top };
       el.classList.add('drag'); el.style.zIndex = '5';
@@ -281,7 +291,8 @@
     send: null,
     get count() { return cards.size; },
     /** The whole list from the sidecar: new ones appear, changed ones redraw, missing ones go. */
-    set(list) {
+    set(list, where = 'front', canLayer = true) {
+      layer = where === 'back' ? 'back' : 'front';
       list = Array.isArray(list) ? list.filter((w) => w && typeof w.id === 'string' && BUILD[w.kind]) : [];
       const keep = new Set(list.map((w) => w.id));
       for (const [id, c] of cards) if (!keep.has(id)) { remove(c); cards.delete(id); }
@@ -289,6 +300,13 @@
         let c = cards.get(w.id);
         if (!c) { c = build(w); cards.set(w.id, c); fill(c, w); requestAnimationFrame(() => c.el.classList.add('on')); }
         else fill(c, w);
+      }
+      // The button shows where they are now: the solid sheet is the widgets, the outlined one the other windows.
+      for (const c of cards.values()) {
+        c.lay.hidden = !canLayer;
+        c.lay.setAttribute('aria-label', layer === 'back' ? 'Bring widgets in front of windows' : 'Keep widgets behind windows');
+        c.lay.title = c.lay.getAttribute('aria-label');
+        c.sheets[0].setAttribute('fill', layer === 'back' ? 'currentColor' : 'none'); c.sheets[1].setAttribute('fill', layer === 'back' ? 'rgba(5, 18, 20, .97)' : 'currentColor');
       }
       clearInterval(ticker); ticker = 0;
       if ([...cards.values()].some((c) => c.tick)) ticker = setInterval(() => { for (const c of cards.values()) c.tick?.(); }, 250);

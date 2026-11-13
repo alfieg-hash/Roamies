@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 rm -rf dist && mkdir -p dist
-cp ../desktop.html dist/
+cp ../desktop.html ../widgets.html dist/
 cp -R ../roamies ../onboarding ../panel dist/
 ../tauri/sidecar/bundle.sh
 # Ship a Node.js runtime with the app, for the target being built (--target <triple>, else this machine).

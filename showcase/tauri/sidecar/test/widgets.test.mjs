@@ -177,6 +177,28 @@ W.stop();
   C.stop();
 }
 
+// Behind other windows or in front: said with every list, kept across restarts, set by the tool or a widget's button.
+{
+  const f3 = path.join(dir, 'layer.json'), got = [];
+  let L = createWidgets({ file: f3, now, onChange: (list, layer) => got.push([list.length, layer]) });
+  await L.run({ do: 'add', kind: 'clock' });
+  assert.deepEqual(got.at(-1), [1, 'front'], 'in front unless asked');
+  assert.match(await L.run({ do: 'layer', layer: 'back' }), /behind other windows/);
+  assert.deepEqual(got.at(-1), [1, 'back']);
+  assert.match(L.describe(), /^\(kept behind other windows/);
+  await assert.rejects(L.run({ do: 'layer' }), /Give layer/);
+  await L.setLayer('sideways');
+  assert.equal(L.layer, 'back');
+  await flushWrites(); L.stop();
+  L = createWidgets({ file: f3, now, onChange: (list, layer) => got.push([list.length, layer]) });
+  L.sync(true);
+  assert.deepEqual(got.at(-1), [1, 'back'], 'still behind after a restart');
+  await L.setLayer('front');
+  assert.deepEqual(got.at(-1), [1, 'front']);
+  assert.doesNotMatch(L.describe(), /behind/);
+  await flushWrites(); L.stop();
+}
+
 // A widgets.json that was edited into nonsense starts empty instead of breaking the app.
 fs.writeFileSync(file, JSON.stringify({ next: 'x', list: [{ kind: 'virus' }, null, { id: 'w1', kind: 'clock' }] }));
 W = make();

@@ -54,7 +54,7 @@ assert.ok(!/"(oneOf|anyOf|allOf)"/.test(drawSchema), 'draw is one flat object sc
   assert.deepEqual(schema.required, ['do'], 'only do is always needed');
   assert.equal(await w.execute({ do: 'add', kind: 'clock' }), 'Made w1 (clock).');
   assert.deepEqual(calls, [{ do: 'add', kind: 'clock' }]);
-  assert.ok(w.description.length < 3000, `the widget description stays a readable size (${w.description.length})`);
+  assert.ok(w.description.length < 3500, `the widget description stays a readable size (${w.description.length})`);
 }
 console.log('tool schema ok');
 

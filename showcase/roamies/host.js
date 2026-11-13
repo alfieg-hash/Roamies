@@ -432,7 +432,8 @@
     }
     if (!getAgent()) return;
     // Widgets live on the Sidekick's overlay only, and stay up whether or not it is out.
-    if (m.kind === 'widgets') { Roamie.widgets?.set(m.list); return; }
+    // Kept behind other windows, they are shown by the shell's back window instead (widgets.html); Linux has none.
+    if (m.kind === 'widgets') { const back = m.layer === 'back' && !window.ROAMIE_LINUX; Roamie.widgets?.set(back ? [] : m.list, back ? 'back' : 'front', !window.ROAMIE_LINUX); return; }
     if (m.kind === 'hands') {
       // on/off: it is acting in another app. In between: where each step lands (global screen points) and when a
       // step takes the real cursor; the Sidekick hops there in its cursor form instead of chasing the cursor.

@@ -15,7 +15,7 @@ export const LIMITS = { widgets: 12, items: 12, columns: 6, rows: 12, bars: 12, 
 
 // One flat object (no unions: some providers reject them); which fields a kind needs is checked in build().
 export const WidgetArgs = z.object({
-  do: z.enum(['add', 'change', 'remove']),
+  do: z.enum(['add', 'change', 'remove', 'layer']),
   id: z.string().max(8).optional(),
   kind: z.enum(KINDS).optional(),
   title: z.string().max(40).optional(),
@@ -35,6 +35,7 @@ export const WidgetArgs = z.object({
   url: z.string().max(600).optional(),
   fields: z.array(z.object({ label: z.string().min(1).max(24), path: z.string().max(120).optional(), after: z.string().max(60).optional(), unit: z.string().max(12).optional() })).max(LIMITS.fields).optional(),
   every: z.number().optional(),
+  layer: z.enum(['front', 'back']).optional(),
 });
 
 const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
@@ -120,11 +121,12 @@ export async function fetchPublic(url, { fetch: get = fetch, lookup = (h) => dns
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** The widgets on the desktop. onChange(list for the overlay) after every change; onTimer(widget) when a timer runs
+/** The widgets on the desktop. onChange(list for the overlay, layer) after every change (layer: 'front' of every
+ *  window, or 'back' behind other apps' windows); onTimer(widget) when a timer runs
  *  out while the app is open; reminders() gives the list a reminders widget shows. */
 export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Date.now, onChange = () => {}, onTimer = () => {}, reminders = () => ({ today: [], later: [] }), net = {} } = {}) {
   const saved = readJson(file);
-  const state = { next: Number.isInteger(saved?.next) ? saved.next : 1, list: Array.isArray(saved?.list) ? saved.list.filter((w) => w && KINDS.includes(w.kind) && typeof w.id === 'string').slice(0, LIMITS.widgets) : [] };
+  const state = { layer: saved?.layer === 'back' ? 'back' : 'front', next: Number.isInteger(saved?.next) ? saved.next : 1, list: Array.isArray(saved?.list) ? saved.list.filter((w) => w && KINDS.includes(w.kind) && typeof w.id === 'string').slice(0, LIMITS.widgets) : [] };
   const timers = new Map();
   let ticker = null;
 
@@ -158,8 +160,10 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
   });
   let sent = '';
   /** Tells the overlay, if what it shows would change (force: even if not, e.g. when the overlay has just loaded). */
-  function sync(force = false) { const list = view(), key = JSON.stringify(list); if (!force && key === sent) return; sent = key; onChange(list); }
-  function commit() { const p = writeJson(file, { next: state.next, list: state.list }); sync(); return p; }
+  const sentKey = (list) => state.layer + JSON.stringify(list);
+  function sync(force = false) { const list = view(), key = sentKey(list); if (!force && key === sent) return; sent = key; onChange(list, state.layer); }
+  const save = () => writeJson(file, { layer: state.layer, next: state.next, list: state.list });
+  function commit() { const p = save(); sync(); return p; }
 
   // The fields a kind keeps, checked: what's missing or wrong is said in words the model can act on.
   function fill(w, a, fresh) {
@@ -258,6 +262,11 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
     /** The widget tool. Returns what to tell the model. */
     async run(args) {
       const a = WidgetArgs.parse(args);
+      if (a.do === 'layer') {
+        if (!a.layer) throw new Error('Give layer: back (behind other windows) or front (on top of them).');
+        await api.setLayer(a.layer);
+        return a.layer === 'back' ? `Widgets now sit behind other windows${state.list.length ? '' : ' (there are none yet)'}: an open app covers them, and they show on the bare desktop.` : 'Widgets now stay in front of other windows.';
+      }
       if (a.do === 'remove') {
         if (String(a.id ?? '').trim().toLowerCase() === 'all') { const n = state.list.length; for (const w of state.list.splice(0)) clearTimeout(timers.get(w.id)); timers.clear(); await commit(); return n ? `Removed all ${n} widgets.` : 'There were no widgets.'; }
         const w = need(a.id);
@@ -292,7 +301,10 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
       return `Changed ${label(w)}.`;
     },
     // From the overlay: dragged, closed, an item ticked, a timer or stopwatch button pressed.
-    move(id, x, y) { const w = find(id); if (!w || !Number.isFinite(x) || !Number.isFinite(y)) return; w.x = Math.round(x); w.y = Math.round(y); sent = JSON.stringify(view()); return writeJson(file, { next: state.next, list: state.list }); },
+    move(id, x, y) { const w = find(id); if (!w || !Number.isFinite(x) || !Number.isFinite(y)) return; w.x = Math.round(x); w.y = Math.round(y); sent = sentKey(view()); return save(); },
+    /** In front of every window, or behind other apps' windows (from the tool, or a widget's own button). */
+    get layer() { return state.layer; },
+    setLayer(layer) { if (layer !== 'front' && layer !== 'back') return; state.layer = layer; return commit(); },
     close(id) { const w = find(id); if (!w) return; state.list.splice(state.list.indexOf(w), 1); clearTimeout(timers.get(w.id)); timers.delete(w.id); return commit(); },
     tick(id, i) { const w = find(id), it = w?.kind === 'todo' ? w.items[i] : null; if (!it) return; it.done = !it.done; return commit(); },
     act(id, what) {
@@ -307,7 +319,7 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
     describe() {
       if (!state.list.length) return '';
       const t = now();
-      return state.list.map((w) => {
+      return (state.layer === 'back' ? '(kept behind other windows; widget do layer front brings them on top)\n' : '') + state.list.map((w) => {
         const name = `${w.id}: ${w.kind}${w.title ? ` "${w.title}"` : ''}`;
         switch (w.kind) {
           case 'clock': return `- ${name}${w.zone ? ` (${w.zone})` : ''}`;

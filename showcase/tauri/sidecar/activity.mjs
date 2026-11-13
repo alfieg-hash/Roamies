@@ -26,7 +26,7 @@ export function describe(name, args = {}) {
     case 'remember_commitment': return ['Adding a reminder', 'Added a reminder'];
     case 'update_commitment': return ['Updating a reminder', 'Updated a reminder'];
     case 'forget_fact': return ['Forgetting it', 'Forgot it'];
-    case 'widget': return args.do === 'remove' ? ['Removing a widget', 'Removed a widget'] : args.do === 'change' ? ['Updating a widget', 'Updated a widget'] : ['Making a widget', 'Made a widget'];
+    case 'widget': return args.do === 'layer' ? ['Moving the widgets', 'Moved the widgets'] : args.do === 'remove' ? ['Removing a widget', 'Removed a widget'] : args.do === 'change' ? ['Updating a widget', 'Updated a widget'] : ['Making a widget', 'Made a widget'];
     case 'open': {
       const t = String(args.target ?? '');
       const what = /^https?:\/\//i.test(t) ? host(t) : short(base(t));

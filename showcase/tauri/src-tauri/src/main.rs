@@ -87,6 +87,63 @@ fn is_overlay(label: &str) -> bool {
     label.starts_with("overlay-")
 }
 
+/// The window widgets sit in while they are kept behind other apps' windows (widgets.html): at the bottom of the
+/// stack on the main screen, letting clicks through except over a widget. It exists only while there are widgets
+/// kept behind (widgets_back).
+const WIDGETS_BACK: &str = "widgets-back";
+
+/// Windows the cursor loop reports to, so their pages can say what takes clicks.
+fn tracks_cursor(label: &str) -> bool {
+    is_overlay(label) || label == WIDGETS_BACK
+}
+
+fn build_widgets_back(app: &AppHandle) -> tauri::Result<()> {
+    let Some(mon) = app.primary_monitor()? else { return Ok(()) };
+    let scale = mon.scale_factor();
+    let pos = mon.position().to_logical::<f64>(scale);
+    let size = mon.size().to_logical::<f64>(scale);
+    let w = WebviewWindowBuilder::new(app, WIDGETS_BACK, WebviewUrl::App("widgets.html".into()))
+        .title("Roamies widgets")
+        .transparent(true)
+        .decorations(false)
+        .shadow(false)
+        .resizable(false)
+        .always_on_bottom(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .focusable(false)
+        .position(pos.x, pos.y)
+        .inner_size(size.width, size.height)
+        .build()?;
+    w.set_ignore_cursor_events(true)?;
+    #[cfg(target_os = "windows")]
+    exclude_from_capture(&w);
+    Ok(())
+}
+
+/// The sidecar's widget list: make, feed or close the back window. A new window's page asks for the list itself
+/// once it has loaded (widgets_ready). Linux has no back layer: its widgets stay on the overlay.
+fn widgets_back(app: &AppHandle, msg: &Value) {
+    if cfg!(target_os = "linux") {
+        return;
+    }
+    let wanted = msg.get("layer").and_then(Value::as_str) == Some("back") && msg.get("list").and_then(Value::as_array).is_some_and(|l| !l.is_empty());
+    let (app2, js) = (app.clone(), format!("window.__roamieHost&&__roamieHost({msg})"));
+    let _ = app.run_on_main_thread(move || match (app2.get_webview_window(WIDGETS_BACK), wanted) {
+        (Some(w), true) => {
+            let _ = w.eval(&js);
+        }
+        (Some(w), false) => {
+            let _ = w.destroy();
+        }
+        (None, true) => {
+            let _ = build_widgets_back(&app2);
+        }
+        (None, false) => {}
+    });
+}
+
 fn to_sidecar(app: &AppHandle, msg: &Value) {
     if let Some(stdin) = app.state::<Sidecar>().0.lock().unwrap().as_mut() {
         let _ = writeln!(stdin, "{msg}");
@@ -254,7 +311,10 @@ fn set_hot(window: WebviewWindow, hot: bool) {
     if cfg!(target_os = "linux") {
         return;
     }
-    OVERLAY_HOT.store(hot, Ordering::Relaxed);
+    // The widgets' back window only switches its own clicks; OVERLAY_HOT is about the overlays.
+    if window.label() != WIDGETS_BACK {
+        OVERLAY_HOT.store(hot, Ordering::Relaxed);
+    }
     let _ = window.set_ignore_cursor_events(!hot);
 }
 
@@ -1208,7 +1268,7 @@ fn pump_cursor(app: AppHandle) {
         last_raw = (raw.x, raw.y);
         let cur = cursor_from_raw(raw.x, raw.y, primary_scale);
         for (label, w) in app.webview_windows() {
-            if !is_overlay(&label) {
+            if !tracks_cursor(&label) {
                 continue;
             }
             if n % 240 == 1 {
@@ -1419,6 +1479,9 @@ fn handle_sidecar(app: &AppHandle, msg: Value) {
         }
         Some("ui") => {
             if let Some(m) = msg.get("msg") {
+                if m.get("kind").and_then(Value::as_str) == Some("widgets") {
+                    widgets_back(app, m);
+                }
                 to_overlays(app, m);
             }
         }
