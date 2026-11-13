@@ -1,4 +1,4 @@
-// Desktop widgets: small cards the user asks to keep on their screen: a clock, a timer, a stopwatch, a note, a
+// Desktop widgets: small cards the user asks to keep on their screen: a clock, a timer, a countdown to a date, a stopwatch, a note, a
 // checklist, their reminders, a table, bars, a timeline, or values read from a web address every few minutes.
 // They are kept in widgets.json (what each one is and where it was dragged to), so they come back after a restart.
 // No model-written code ever runs: the overlay (showcase/roamies/widgets.js) only draws these structures, and a live
@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { SAFE, checkWidgetUrl, isPrivateAddress } from './safety.mjs';
 import { DIR, readJson, writeJson } from './store.mjs';
 
-export const KINDS = ['clock', 'timer', 'stopwatch', 'note', 'todo', 'reminders', 'table', 'bars', 'timeline', 'live'];
+export const KINDS = ['clock', 'timer', 'countdown', 'stopwatch', 'note', 'todo', 'reminders', 'table', 'bars', 'timeline', 'live'];
 export const TONES = ['accent', 'teal', 'amber', 'coral', 'lilac', 'sky', 'lime', 'red', 'white'];
 export const LIMITS = { widgets: 12, items: 12, columns: 6, rows: 12, bars: 12, events: 10, fields: 6, bytes: 512_000, minEvery: 5, maxEvery: 1440, timer: 24 * 3600 };
 
@@ -25,6 +25,7 @@ export const WidgetArgs = z.object({
   tone: z.enum(TONES).optional(),
   zone: z.string().max(60).optional(),
   seconds: z.number().optional(),
+  until: z.string().max(25).optional(),
   run: z.enum(['start', 'pause', 'reset']).optional(),
   columns: z.array(z.string().max(30)).max(LIMITS.columns).optional(),
   rows: z.array(z.array(z.string().max(80)).max(LIMITS.columns)).max(LIMITS.rows).optional(),
@@ -38,6 +39,16 @@ export const WidgetArgs = z.object({
 
 const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 const clock = (ms) => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), p = (n) => String(n).padStart(2, '0'); return h ? `${h}:${p(m)}:${p(s % 60)}` : `${m}:${p(s % 60)}`; };
+/** A countdown's moment, in the user's own time: "2026-12-25" (the start of that day) or "2026-12-25T18:30". */
+export function parseUntil(text) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(String(text ?? '').trim());
+  if (!m) return null;
+  const [y, mo, d, h = 0, mi = 0, sec = 0] = m.slice(1).map((v) => (v === undefined ? undefined : Number(v)));
+  const at = new Date(y, mo - 1, d, h, mi, sec);
+  // 31 February and 25:00 roll over instead of failing: those are refused.
+  return at.getFullYear() === y && at.getMonth() === mo - 1 && at.getDate() === d && at.getHours() === h && at.getMinutes() === mi ? at.getTime() : null;
+}
+const days = (ms) => { const d = Math.floor(Math.max(0, ms) / 864e5); return d >= 2 ? `${d} days` : clock(ms); };
 const validZone = (zone) => { try { new Intl.DateTimeFormat('en', { timeZone: zone }); return true; } catch { return false; } };
 
 /** The value at a dotted path in parsed JSON ("current.temperature_2m", "prices.0.usd"): own keys and list indexes
@@ -119,19 +130,23 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
 
   // A timer that ran out while the app was closed just shows as done; nothing is said about it now.
   for (const w of state.list) if (w.kind === 'timer' && w.running && w.endsAt <= now()) Object.assign(w, { running: false, left: 0, done: true });
+  for (const w of state.list) if (w.kind === 'countdown' && !w.done && w.at <= now()) w.done = true;
 
   const find = (id) => state.list.find((w) => w.id === String(id ?? '').trim().toLowerCase());
   const need = (id) => { const w = find(id); if (!w) throw new Error(state.list.length ? `${id ? `No widget ${id}` : 'Give the id of the widget'}. On the desktop: ${state.list.map((x) => `${x.id} (${x.kind})`).join(', ')}.` : 'There are no widgets on the desktop.'); return w; };
 
   function arm(w) {
     clearTimeout(timers.get(w.id)); timers.delete(w.id);
-    if (w.kind !== 'timer' || !w.running) return;
+    const ends = w.kind === 'timer' && w.running ? w.endsAt : w.kind === 'countdown' && !w.done ? w.at : null;
+    if (ends === null) return;
+    // A wait longer than a timer can hold (about 24 days) is taken in steps of half a day.
     const t = setTimeout(() => {
       timers.delete(w.id);
-      if (!state.list.includes(w) || !w.running) return;
-      Object.assign(w, { running: false, left: 0, done: true });
+      if (!state.list.includes(w) || w.done || (w.kind === 'timer' && !w.running)) return;
+      if (ends - now() > 500) return arm(w);
+      Object.assign(w, w.kind === 'timer' ? { running: false, left: 0, done: true } : { done: true });
       commit(); onTimer(w);
-    }, Math.max(0, w.endsAt - now()));
+    }, Math.min(Math.max(0, ends - now()), 12 * 3600_000));
     t.unref?.();
     timers.set(w.id, t);
   }
@@ -165,6 +180,16 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
         if (a.run === 'pause' && w.running) Object.assign(w, { running: false, left: Math.max(0, w.endsAt - now()) });
         else if (a.run === 'start' && !w.running) { const left = w.done || !w.left ? w.total : w.left; Object.assign(w, { running: true, endsAt: now() + left, left, done: false }); }
         else if (a.run === 'reset') Object.assign(w, { running: false, left: w.total, done: false });
+        break;
+      }
+      case 'countdown': {
+        if (fresh && !has('until')) throw new Error('A countdown needs until: the date it counts down to, like 2026-12-25 or 2026-12-25T18:30.');
+        if (has('until')) {
+          const at = parseUntil(a.until);
+          if (at === null) throw new Error(`"${a.until}" isn't a date I can count down to. Write it as 2026-12-25, or 2026-12-25T18:30 with a time (their local time).`);
+          if (at <= now()) throw new Error(`${a.until} is already past, so there is nothing to count down to. Check the year.`);
+          Object.assign(w, { at, done: false });
+        }
         break;
       }
       case 'stopwatch':
@@ -287,6 +312,7 @@ export function createWidgets({ file = path.join(DIR, 'widgets.json'), now = Dat
         switch (w.kind) {
           case 'clock': return `- ${name}${w.zone ? ` (${w.zone})` : ''}`;
           case 'timer': return `- ${name}, ${w.done ? 'finished' : `${clock(w.running ? w.endsAt - t : w.left)} left, ${w.running ? 'running' : 'paused'}`}`;
+          case 'countdown': return `- ${name}, to ${new Date(w.at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}, ${w.done || w.at <= t ? 'reached' : `${days(w.at - t)} left`}`;
           case 'stopwatch': return `- ${name}, ${clock(w.running ? w.elapsed + t - w.startedAt : w.elapsed)}, ${w.running ? 'running' : 'stopped'}`;
           case 'note': return `- ${name}: ${clip([w.text, ...(w.items ?? [])].filter(Boolean).join('; '), 160)}`;
           case 'todo': return `- ${name}: ${clip(w.items.map((it, i) => `${i + 1}. ${it.text}${it.done ? ' [done]' : ''}`).join(', '), 300)}`;

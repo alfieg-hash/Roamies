@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { flushWrites } from '../store.mjs';
-import { LIMITS, createWidgets, fetchPublic, readFields, valueAt } from '../widgets.mjs';
+import { LIMITS, createWidgets, fetchPublic, parseUntil, readFields, valueAt } from '../widgets.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'roamies-widgets-'));
 const file = path.join(dir, 'widgets.json');
@@ -140,6 +140,42 @@ assert.equal(rang.length, 1);
 assert.match(W.describe(), /finished/);
 await flushWrites();
 W.stop();
+
+// A countdown to a date, in the user's own time: a day means its start; nonsense and past dates are refused.
+{
+  assert.equal(parseUntil('2030-12-25'), new Date(2030, 11, 25).getTime());
+  assert.equal(parseUntil('2030-12-25T18:30'), new Date(2030, 11, 25, 18, 30).getTime());
+  assert.equal(parseUntil('2030-12-25 18:30:15'), new Date(2030, 11, 25, 18, 30, 15).getTime());
+  for (const bad of ['Christmas', '25/12/2030', '2030-02-31', '2030-13-01', '2030-12-25T25:00', '', '2030-12-25T18:30Z']) assert.equal(parseUntil(bad), null, bad);
+  const f2 = path.join(dir, 'countdown.json'), said = [];
+  const at = new Date(2030, 11, 25).getTime();
+  clock = at - (40 * 864e5 + 3 * 3600e3);
+  let C = createWidgets({ file: f2, now, onTimer: (w) => said.push(w.id) });
+  await assert.rejects(C.run({ do: 'add', kind: 'countdown' }), /needs until/);
+  await assert.rejects(C.run({ do: 'add', kind: 'countdown', until: 'next Friday' }), /isn't a date I can count down to/);
+  await assert.rejects(C.run({ do: 'add', kind: 'countdown', until: '2020-01-01' }), /already past/);
+  assert.match(await C.run({ do: 'add', kind: 'countdown', until: '2030-12-25', title: 'Christmas' }), /Made w1 \(countdown "Christmas"\)/);
+  assert.match(C.describe(), /w1: countdown "Christmas", to .*2030.*, 40 days left/);
+  assert.equal(C.view()[0].at, at, 'the overlay gets the moment and counts down itself');
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(said, [], '40 days away: nothing is said yet (a wait that long is taken in steps)');
+  // Moved to a moment about to come: it is reached and said once.
+  clock = at - 5 * 3600e3;
+  const soon = new Date(clock + 2000), p = (n) => String(n).padStart(2, '0');
+  await C.run({ do: 'change', id: 'w1', until: `${soon.getFullYear()}-${p(soon.getMonth() + 1)}-${p(soon.getDate())}T${p(soon.getHours())}:${p(soon.getMinutes())}:${p(soon.getSeconds())}` });
+  clock += 3000;
+  await new Promise((r) => setTimeout(r, 2200)); // the real seconds it was set for
+  assert.deepEqual(said, ['w1']);
+  assert.match(C.describe(), /reached/);
+  // One that passed while the app was closed shows as reached, unsaid.
+  await C.run({ do: 'add', kind: 'countdown', until: '2030-12-25' });
+  await flushWrites(); C.stop();
+  clock = at + 1000;
+  C = createWidgets({ file: f2, now, onTimer: (w) => said.push(w.id) });
+  assert.equal(C.view()[1].done, true);
+  assert.deepEqual(said, ['w1']);
+  C.stop();
+}
 
 // A widgets.json that was edited into nonsense starts empty instead of breaking the app.
 fs.writeFileSync(file, JSON.stringify({ next: 'x', list: [{ kind: 'virus' }, null, { id: 'w1', kind: 'clock' }] }));

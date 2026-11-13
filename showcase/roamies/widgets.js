@@ -1,4 +1,4 @@
-// Widgets: small cards the user asked to keep on the desktop (a clock, a timer, a stopwatch, a note, a to-do list,
+// Widgets: small cards the user asked to keep on the desktop (a clock, a timer, a countdown to a date, a stopwatch, a note, a to-do list,
 // their reminders, a table, bars, a timeline, values read from the web). The sidecar keeps them (widgets.mjs) and
 // sends the whole list after every change; this page only shows it. Each is real type in the research card's look
 // (pixel frame, Martian Mono), dragged by its top bar and closed with its x. Model text goes in as textContent only.
@@ -85,7 +85,7 @@
   const p2 = (n) => String(n).padStart(2, '0');
   // 1:05 or 1:02:05, from milliseconds.
   const span = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h ? `${h}:${p2(m)}:${p2(s % 60)}` : `${m}:${p2(s % 60)}`; };
-  const TITLES = { clock: 'clock', timer: 'timer', stopwatch: 'stopwatch', note: 'note', todo: 'to do', reminders: 'reminders', table: 'table', bars: 'chart', timeline: 'timeline', live: 'live' };
+  const TITLES = { clock: 'clock', timer: 'timer', countdown: 'countdown', stopwatch: 'stopwatch', note: 'note', todo: 'to do', reminders: 'reminders', table: 'table', bars: 'chart', timeline: 'timeline', live: 'live' };
   const WIDTH = { table: 'wider', bars: 'wide', timeline: 'wide', todo: 'wide', reminders: 'wide', note: 'wide' };
   const send = (msg) => api.send?.(msg);
 
@@ -133,6 +133,26 @@
         big.textContent = span(left + (w.running && left > 0 ? 999 : 0));
         fill.style.width = `${Math.round(100 * (1 - left / Math.max(1, w.total)))}%`;
         sub.textContent = over ? "Time's up" : w.running ? `of ${span(w.total)}` : 'Paused';
+        c.el.classList.toggle('rw-done', over);
+        if (over && !rang) { rang = true; R.sfx?.play('tick'); }
+      };
+    },
+    // To a date: whole days big with the hours, minutes and seconds beside them; in the last day, just the clock.
+    countdown(c, w, body) {
+      const big = mk('div', 'rw-big'), main = mk('span'), rest = mk('small'), sub = mk('div', 'rw-sub');
+      big.append(main, rest); body.append(big, sub);
+      const d = new Date(w.at), timed = d.getHours() || d.getMinutes();
+      let when = '';
+      try { when = d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...(timed ? { hour: 'numeric', minute: '2-digit' } : {}) }); } catch {}
+      let rang = !!w.done || w.at <= Date.now();
+      c.tick = () => {
+        const left = w.at - Date.now(), over = w.done || left <= 0;
+        if (over) { main.textContent = "It's time"; rest.textContent = ''; }
+        else {
+          const s = Math.ceil(left / 1000), days = Math.floor(s / 86400), clock = `${p2(Math.floor((s % 86400) / 3600))}:${p2(Math.floor((s % 3600) / 60))}:${p2(s % 60)}`;
+          main.textContent = days ? `${days}d` : clock; rest.textContent = days ? clock : '';
+        }
+        sub.textContent = when;
         c.el.classList.toggle('rw-done', over);
         if (over && !rang) { rang = true; R.sfx?.play('tick'); }
       };
