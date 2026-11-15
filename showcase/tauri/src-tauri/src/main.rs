@@ -1428,6 +1428,9 @@ fn update(app: &AppHandle, install: bool) {
     let by_page = linux::appimage().is_none();
     #[cfg(not(target_os = "linux"))]
     let by_page = false;
+    // A build with no update feed in its config (a fork's own build: plugins.updater.endpoints is []) never looks
+    // for updates: the main project's next release would replace it and drop whatever the fork added.
+    let no_feed = app.config().plugins.0.get("updater").and_then(|u| u.get("endpoints")).and_then(Value::as_array).map_or(true, |e| e.is_empty());
     tauri::async_runtime::spawn(async move {
         let status = |state: &str, extra: Value| {
             let mut m = json!({ "type": "update_status", "state": state });
@@ -1436,6 +1439,10 @@ fn update(app: &AppHandle, install: bool) {
             }
             to_sidecar(&app, &m);
         };
+        if no_feed {
+            status("none", json!({}));
+            return;
+        }
         let found = match app.updater() {
             Ok(u) => u.check().await,
             Err(e) => Err(e),

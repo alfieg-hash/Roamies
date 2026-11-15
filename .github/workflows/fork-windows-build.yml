@@ -57,11 +57,13 @@ jobs:
         run: cargo install tauri-cli --version "^2" --locked
 
       # Update bundles need the main project's signing key, which a fork doesn't have: build the installer without them.
+      # And no update feed: the app would otherwise offer the main project's next release, which replaces this build
+      # and drops what the fork added (update() in main.rs does nothing when endpoints is empty).
       - name: Build the installer
         env:
           TAURI_BUNDLES: nsis
         run: |
-          printf '%s\n' '{ "bundle": { "createUpdaterArtifacts": false } }' > src-tauri/fork.conf.json
+          printf '%s\n' '{ "bundle": { "createUpdaterArtifacts": false }, "plugins": { "updater": { "endpoints": [] } } }' > src-tauri/fork.conf.json
           ./build.sh release --target x86_64-pc-windows-msvc --config fork.conf.json
 
       - uses: actions/upload-artifact@v4
